@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SIMD Image Processing Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--bg1:#0f0f17;--bg2:#14141e;--bg3:#1a1a28;
+  --border:#1f1f33;--border2:#2a2a44;
+  --txt:#e8e8f2;--txt2:#8888aa;--txt3:#444466;
+  --acc:#6c63ff;--acc2:#ff6b9d;--acc3:#00d4aa;--acc4:#ffd166;--warn:#ff9f43;
+  --panel-w:320px;--r:8px;
+  --font-ui:'Syne',sans-serif;--font-code:'Space Mono',monospace;--font-mono:'DM Mono',monospace;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:var(--font-ui)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg1)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.025;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:var(--panel-w) 1fr var(--panel-w);height:100vh}
+/* Header */
+#header{
+  grid-column:1/-1;display:flex;align-items:center;gap:16px;
+  padding:0 20px;background:var(--bg1);border-bottom:1px solid var(--border);z-index:10
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase}
+.logo-icon{width:28px;height:28px;background:linear-gradient(135deg,var(--acc),var(--acc2));border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.logo-sub{font-size:9px;letter-spacing:.2em;color:var(--txt3);font-weight:400;margin-top:1px;display:block}
+#header-tabs{display:flex;gap:2px;margin-left:auto}
+.tab-btn{padding:6px 14px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;color:var(--txt2);transition:all .15s;font-family:var(--font-ui)}
+.tab-btn.active,.tab-btn:hover{background:var(--bg3);border-color:var(--border2);color:var(--txt)}
+.tab-btn.active{color:var(--acc);border-color:var(--acc)}
+#sys-badge{display:flex;align-items:center;gap:8px;padding:4px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;font-size:10px;font-family:var(--font-code);color:var(--txt2)}
+.badge-dot{width:6px;height:6px;border-radius:50%;background:var(--acc3);box-shadow:0 0 6px var(--acc3);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+/* Panels */
+#panel-left{grid-row:2;overflow-y:auto;background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column}
+#center{grid-row:2;display:flex;flex-direction:column;background:var(--bg);overflow:hidden;position:relative}
+#panel-right{grid-row:2;overflow-y:auto;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column}
+/* Section */
+.section{border-bottom:1px solid var(--border)}
+.section-hdr{display:flex;align-items:center;gap:8px;padding:11px 16px;cursor:pointer;user-select:none;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--txt2);transition:all .12s}
+.section-hdr:hover{color:var(--txt);background:var(--bg2)}
+.section-hdr .chevron{margin-left:auto;transition:transform .2s;font-size:8px}
+.section-hdr.open .chevron{transform:rotate(180deg)}
+.section-body{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.section-body.collapsed{display:none}
+/* Alg buttons */
+.alg-group{display:flex;flex-direction:column;gap:2px}
+.alg-group-label{font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--txt3);padding:6px 2px 2px;font-family:var(--font-code)}
+.alg-btn{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:11px;font-family:var(--font-mono);background:transparent;border:1px solid transparent;color:var(--txt2);transition:all .12s;text-align:left;width:100%}
+.alg-btn:hover{background:var(--bg3);color:var(--txt);border-color:var(--border2)}
+.alg-btn.active{background:color-mix(in srgb,var(--acc) 15%,var(--bg2));border-color:var(--acc);color:var(--acc)}
+.alg-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+.alg-badge{margin-left:auto;font-size:8px;letter-spacing:.06em;padding:2px 5px;border-radius:3px;font-family:var(--font-code);font-weight:700}
+.badge-cpu{background:color-mix(in srgb,var(--acc) 20%,transparent);color:var(--acc)}
+.badge-ai{background:color-mix(in srgb,var(--acc3) 20%,transparent);color:var(--acc3)}
+.badge-mt{background:color-mix(in srgb,var(--acc4) 20%,transparent);color:var(--acc4)}
+/* Params */
+.param-row{display:flex;flex-direction:column;gap:4px}
+.param-label{display:flex;justify-content:space-between;font-size:10px;color:var(--txt2);font-family:var(--font-code)}
+.param-val{color:var(--acc4);font-weight:700}
+input[type=range]{-webkit-appearance:none;width:100%;height:3px;background:var(--border2);border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--acc);cursor:pointer;box-shadow:0 0 8px color-mix(in srgb,var(--acc) 60%,transparent);transition:transform .1s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
+select,input[type=number]{background:var(--bg3);border:1px solid var(--border2);color:var(--txt);font-family:var(--font-code);font-size:11px;padding:5px 8px;border-radius:5px;width:100%;outline:none;transition:border-color .15s}
+select:focus,input[type=number]:focus{border-color:var(--acc)}
+/* Buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:11px;font-family:var(--font-ui);font-weight:700;letter-spacing:.05em;transition:all .15s;border:1px solid transparent;text-transform:uppercase}
+.btn-primary{background:var(--acc);color:#fff;border-color:var(--acc);box-shadow:0 0 16px color-mix(in srgb,var(--acc) 30%,transparent)}
+.btn-primary:hover{filter:brightness(1.15);box-shadow:0 0 24px color-mix(in srgb,var(--acc) 50%,transparent)}
+.btn-secondary{background:var(--bg3);color:var(--txt2);border-color:var(--border2)}
+.btn-secondary:hover{color:var(--txt);border-color:var(--txt3)}
+.btn-danger{background:color-mix(in srgb,#ff4757 15%,var(--bg2));color:#ff4757;border-color:#ff4757}
+.btn-sm{padding:5px 10px;font-size:10px}
+.btn-group{display:flex;gap:6px;flex-wrap:wrap}
+.btn:disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+/* Canvas */
+#canvas-toolbar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:var(--bg1);border-bottom:1px solid var(--border);flex-shrink:0}
+#canvas-toolbar .spacer{flex:1}
+#view-tabs{display:flex;gap:2px}
+.view-tab{padding:4px 10px;font-size:10px;font-family:var(--font-code);background:var(--bg2);border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--txt2);transition:all .12s}
+.view-tab.active{background:var(--bg3);color:var(--txt);border-color:var(--border2)}
+#canvas-wrap{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 20% 80%,color-mix(in srgb,var(--acc) 6%,transparent),transparent 50%),
+             radial-gradient(circle at 80% 20%,color-mix(in srgb,var(--acc2) 4%,transparent),transparent 50%),var(--bg)}
+#drop-zone{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--border2);border-radius:12px;margin:24px;cursor:pointer;transition:all .2s;z-index:2}
+#drop-zone:hover,#drop-zone.drag-over{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 5%,transparent)}
+#drop-zone.hidden{display:none}
+.drop-icon{font-size:48px;opacity:.4}
+.drop-title{font-size:16px;font-weight:800;color:var(--txt)}
+.drop-sub{font-size:11px;color:var(--txt2);font-family:var(--font-code)}
+#file-input{display:none}
+#canvas-container{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#canvas-container.hidden{display:none}
+.canvas-split{display:flex;width:100%;height:100%;position:relative}
+#canvas-before,#canvas-after{flex:1;height:100%;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#canvas-before{border-right:2px solid var(--acc)}
+.canvas-label{position:absolute;top:10px;left:10px;z-index:5;font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:4px;font-family:var(--font-code);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(4px)}
+.canvas-label.before-lbl{color:var(--txt2);border:1px solid var(--border2)}
+.canvas-label.after-lbl{color:var(--acc3);border:1px solid var(--acc3)}
+#img-before,#img-after{max-width:100%;max-height:100%;object-fit:contain;display:block;user-select:none}
+#img-after{display:none}
+#split-divider{position:absolute;top:0;bottom:0;width:4px;background:var(--acc);cursor:col-resize;z-index:10;left:50%;transform:translateX(-50%)}
+.view-single #canvas-before{border-right:none;flex:1}
+.view-single #canvas-after{display:none}
+.view-single #split-divider{display:none}
+.view-after #canvas-before{display:none}
+.view-after #canvas-after{flex:1}
+.view-after #split-divider{display:none}
+#diff-overlay{position:absolute;inset:0;width:100%;height:100%;display:none;object-fit:contain}
+#processing-overlay{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(4px)}
+#processing-overlay.active{display:flex}
+.spin{width:36px;height:36px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--acc);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.proc-label{font-size:11px;font-family:var(--font-code);color:var(--txt2)}
+.proc-time{font-size:10px;font-family:var(--font-code);color:var(--acc4)}
+/* Stats bar */
+#stats-bar{display:flex;align-items:center;background:var(--bg1);border-top:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.stat-item{display:flex;flex-direction:column;align-items:center;padding:6px 16px;border-right:1px solid var(--border);min-width:80px;flex-shrink:0}
+.stat-val{font-size:14px;font-weight:800;font-family:var(--font-code);color:var(--txt)}
+.stat-val.good{color:var(--acc3)}
+.stat-val.warn{color:var(--warn)}
+.stat-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--txt3);margin-top:1px}
+.stat-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-family:var(--font-code);font-weight:700;margin-top:2px}
+/* Histogram */
+.hist-wrap{position:relative;height:110px;width:100%}
+.hist-legend{display:flex;gap:10px;justify-content:center;margin-top:6px}
+.hist-legend-item{display:flex;align-items:center;gap:4px;font-size:9px;font-family:var(--font-code);color:var(--txt2)}
+.legend-dot{width:8px;height:8px;border-radius:50%}
+/* Palette */
+#palette-strip{display:flex;gap:3px;height:40px}
+.pal-swatch{border-radius:5px;cursor:pointer;transition:transform .12s;position:relative;overflow:hidden;flex:1}
+.pal-swatch:hover{transform:scaleY(1.08)}
+.pal-pct{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:8px;font-family:var(--font-code);text-shadow:0 1px 3px rgba(0,0,0,.9);color:#fff}
+/* Metrics */
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.metric-box{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:2px}
+.metric-box-val{font-size:18px;font-weight:800;font-family:var(--font-code);color:var(--txt)}
+.metric-box-lbl{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--txt3)}
+/* Pipeline */
+#pipeline-list{display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto}
+.pipeline-step{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:var(--font-mono);color:var(--txt2);transition:all .2s}
+.step-num{width:18px;height:18px;border-radius:50%;background:var(--border2);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;color:var(--txt3);flex-shrink:0}
+.pipeline-step.done .step-num{background:var(--acc3);color:#000}
+.pipeline-step.active-step{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,var(--bg2))}
+.pipeline-step.active-step .step-num{background:var(--acc);color:#fff;animation:pulse .8s infinite}
+.step-remove{margin-left:auto;font-size:13px;cursor:pointer;color:var(--txt3);background:none;border:none;transition:color .1s;padding:0 2px}
+.step-remove:hover{color:var(--acc2)}
+/* Pipeline progress */
+#pipeline-progress-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;flex:1;min-width:80px}
+#pipeline-bar{height:100%;background:var(--acc);transition:width .3s;width:0}
+/* Bench */
+.bench-wrap{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto}
+.bench-row{display:flex;align-items:center;gap:8px}
+.bench-name{font-size:10px;font-family:var(--font-code);color:var(--txt2);width:130px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bench-track{flex:1;height:14px;background:var(--border);border-radius:3px;overflow:hidden;position:relative}
+.bench-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.bench-ms{font-size:9px;font-family:var(--font-code);color:var(--txt3);width:52px;text-align:right;flex-shrink:0}
+/* Pipeline add */
+.pipe-add-row{display:flex;gap:6px}
+.pipe-add-row select{flex:1}
+/* Notifications */
+#notif-stack{position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.notif{padding:10px 16px;border-radius:8px;min-width:220px;max-width:320px;font-size:11px;font-family:var(--font-code);animation:notif-in .2s ease;border-left:3px solid;background:var(--bg2);box-shadow:0 4px 24px rgba(0,0,0,.5);pointer-events:all}
+@keyframes notif-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+.notif.info{border-color:var(--acc);color:var(--txt)}
+.notif.success{border-color:var(--acc3);color:var(--acc3)}
+.notif.error{border-color:var(--acc2);color:var(--acc2)}
+.notif.warn{border-color:var(--warn);color:var(--warn)}
+/* Zoom */
+.zoom-controls{display:flex;align-items:center;gap:4px}
+.zoom-btn{width:24px;height:24px;border-radius:4px;background:var(--bg3);border:1px solid var(--border2);color:var(--txt);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .1s;line-height:1}
+.zoom-btn:hover{border-color:var(--acc);color:var(--acc)}
+#zoom-level{font-size:10px;font-family:var(--font-code);color:var(--txt2);min-width:38px;text-align:center}
+/* Waveform/Scope */
+#waveform-canvas{width:100%;height:80px;border-radius:4px}
+/* Diff heatmap */
+#diff-canvas{position:absolute;inset:0;display:none;width:100%;height:100%;object-fit:contain}
+/* Neural panel */
+#neural-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.neural-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column;gap:4px}
+.neural-card:hover{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,var(--bg2))}
+.neural-card.active-card{border-color:var(--acc3);background:color-mix(in srgb,var(--acc3) 6%,var(--bg2))}
+.neural-card-icon{font-size:20px}
+.neural-card-name{font-size:11px;font-weight:700;color:var(--txt);font-family:var(--font-ui)}
+.neural-card-desc{font-size:9px;color:var(--txt2);font-family:var(--font-code);line-height:1.5}
+.neural-card-badge{font-size:8px;padding:2px 5px;border-radius:3px;background:color-mix(in srgb,var(--acc3) 20%,transparent);color:var(--acc3);font-family:var(--font-code);font-weight:700;width:fit-content}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── Header ─────────────────────────────────────────────────────── -->
+<header id="header">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <span>SIMD Engine</span>
+      <span class="logo-sub">Image Processing · v2.0 Enterprise</span>
+    </div>
+  </div>
+  <div id="header-tabs">
+    <button class="tab-btn active" onclick="switchTab('process',this)">Process</button>
+    <button class="tab-btn" onclick="switchTab('pipeline',this)">Pipeline</button>
+    <button class="tab-btn" onclick="switchTab('benchmark',this)">Benchmark</button>
+    <button class="tab-btn" onclick="switchTab('neural',this)">Neural AI</button>
+  </div>
+  <div id="sys-badge">
+    <span class="badge-dot"></span>
+    <span id="sys-badge-txt">Connecting...</span>
+  </div>
+</header>
+
+<!-- ── Left Panel ─────────────────────────────────────────────────── -->
+<aside id="panel-left">
+
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>◈</span> Input Image <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">↑ Upload Image</button>
+      <input type="file" id="file-input" accept="image/*"/>
+      <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" onclick="loadSample('gradient')">Gradient</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadSample('noise')">Noise</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadSample('checker')">Checker</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadSample('mandelbrot')">Fractal</button>
+      </div>
+      <div id="img-info" style="font-size:10px;color:var(--txt3);font-family:var(--font-code);line-height:1.6">No image loaded</div>
+    </div>
+  </div>
+
+  <div class="section" id="alg-section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>◧</span> Algorithms <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="alg-group">
+        <div class="alg-group-label">Spatial Filters</div>
+        <button class="alg-btn active" data-alg="gaussian_blur" onclick="selectAlg(this)"><span class="alg-icon">〜</span>Gaussian Blur<span class="alg-badge badge-cpu">AVX2</span></button>
+        <button class="alg-btn" data-alg="bilateral_filter" onclick="selectAlg(this)"><span class="alg-icon">◎</span>Bilateral Filter<span class="alg-badge badge-cpu">SIMD</span></button>
+        <button class="alg-btn" data-alg="median_filter" onclick="selectAlg(this)"><span class="alg-icon">⊞</span>Median Filter<span class="alg-badge badge-cpu">AVX2</span></button>
+        <button class="alg-btn" data-alg="unsharp_mask" onclick="selectAlg(this)"><span class="alg-icon">◈</span>Unsharp Mask<span class="alg-badge badge-cpu">FMA</span></button>
+        <button class="alg-btn" data-alg="guided_filter" onclick="selectAlg(this)"><span class="alg-icon">⊙</span>Guided Filter<span class="alg-badge badge-mt">MT</span></button>
+      </div>
+      <div class="alg-group">
+        <div class="alg-group-label">Edge &amp; Gradient</div>
+        <button class="alg-btn" data-alg="sobel_edges" onclick="selectAlg(this)"><span class="alg-icon">⊘</span>Sobel Edges<span class="alg-badge badge-cpu">AVX2</span></button>
+        <button class="alg-btn" data-alg="canny_edges" onclick="selectAlg(this)"><span class="alg-icon">⋄</span>Canny Edges<span class="alg-badge badge-mt">MT</span></button>
+        <button class="alg-btn" data-alg="laplacian" onclick="selectAlg(this)"><span class="alg-icon">∇</span>Laplacian<span class="alg-badge badge-cpu">SIMD</span></button>
+      </div>
+      <div class="alg-group">
+        <div class="alg-group-label">Tone &amp; Color</div>
+        <button class="alg-btn" data-alg="histogram_equalization" onclick="selectAlg(this)"><span class="alg-icon">▥</span>Hist. Equalization<span class="alg-badge badge-cpu">SIMD</span></button>
+        <button class="alg-btn" data-alg="tone_map_reinhard" onclick="selectAlg(this)"><span class="alg-icon">◑</span>Reinhard Tone Map<span class="alg-badge badge-cpu">FMA</span></button>
+        <button class="alg-btn" data-alg="tone_map_aces" onclick="selectAlg(this)"><span class="alg-icon">◐</span>ACES Tone Map<span class="alg-badge badge-cpu">FMA</span></button>
+        <button class="alg-btn" data-alg="rgb_to_hsv" onclick="selectAlg(this)"><span class="alg-icon">⊛</span>RGB → HSV<span class="alg-badge badge-cpu">SIMD</span></button>
+        <button class="alg-btn" data-alg="add_noise" onclick="selectAlg(this)"><span class="alg-icon">∴</span>Add Noise<span class="alg-badge badge-cpu">RNG</span></button>
+      </div>
+      <div class="alg-group">
+        <div class="alg-group-label">Morphology</div>
+        <button class="alg-btn" data-alg="dilate" onclick="selectAlg(this)"><span class="alg-icon">⊕</span>Dilate<span class="alg-badge badge-cpu">SIMD</span></button>
+        <button class="alg-btn" data-alg="erode" onclick="selectAlg(this)"><span class="alg-icon">⊖</span>Erode<span class="alg-badge badge-cpu">SIMD</span></button>
+        <button class="alg-btn" data-alg="morph_open" onclick="selectAlg(this)"><span class="alg-icon">⊗</span>Morph Open<span class="alg-badge badge-mt">MT</span></button>
+        <button class="alg-btn" data-alg="morph_close" onclick="selectAlg(this)"><span class="alg-icon">⊙</span>Morph Close<span class="alg-badge badge-mt">MT</span></button>
+      </div>
+      <div class="alg-group">
+        <div class="alg-group-label">Geometry &amp; Frequency</div>
+        <button class="alg-btn" data-alg="resize" onclick="selectAlg(this)"><span class="alg-icon">⤡</span>Resize (Lanczos)<span class="alg-badge badge-cpu">AVX2</span></button>
+        <button class="alg-btn" data-alg="frequency_highpass" onclick="selectAlg(this)"><span class="alg-icon">∿</span>Freq. Highpass<span class="alg-badge badge-cpu">FFT</span></button>
+        <button class="alg-btn" data-alg="frequency_lowpass" onclick="selectAlg(this)"><span class="alg-icon">∼</span>Freq. Lowpass<span class="alg-badge badge-cpu">FFT</span></button>
+      </div>
+      <div class="alg-group">
+        <div class="alg-group-label">Neural / AI</div>
+        <button class="alg-btn" data-alg="super_resolution" onclick="selectAlg(this)"><span class="alg-icon">✦</span>Super Resolution<span class="alg-badge badge-ai">RRDB</span></button>
+        <button class="alg-btn" data-alg="neural_denoise" onclick="selectAlg(this)"><span class="alg-icon">✧</span>Neural Denoise<span class="alg-badge badge-ai">NAFNet</span></button>
+        <button class="alg-btn" data-alg="depth_estimation" onclick="selectAlg(this)"><span class="alg-icon">⬡</span>Depth Estimation<span class="alg-badge badge-ai">MiDaS</span></button>
+        <button class="alg-btn" data-alg="colorize_grayscale" onclick="selectAlg(this)"><span class="alg-icon">❋</span>Colorize<span class="alg-badge badge-ai">AI</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>⊞</span> Parameters <span class="chevron">▾</span>
+    </div>
+    <div class="section-body" id="param-panel">
+      <div style="font-size:10px;color:var(--txt3);font-family:var(--font-code)">Select an algorithm</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>▶</span> Actions <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <button class="btn btn-primary" id="btn-apply" onclick="applyAlgorithm()">⚡ Apply Algorithm</button>
+      <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" onclick="resetToOriginal()">↩ Reset</button>
+        <button class="btn btn-secondary btn-sm" onclick="swapImages()">⇄ Swap</button>
+        <button class="btn btn-secondary btn-sm" onclick="downloadResult()">↓ Export</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:10px;color:var(--txt2);cursor:pointer;margin-top:2px">
+        <input type="checkbox" id="auto-apply" style="accent-color:var(--acc)" onchange="state.autoApply=this.checked"/>
+        <span style="font-family:var(--font-code)">Auto-apply on param change</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:10px;color:var(--txt2);cursor:pointer">
+        <input type="checkbox" id="realtime-ws" style="accent-color:var(--acc2)" onchange="toggleRealtimeWS()"/>
+        <span style="font-family:var(--font-code)">Realtime WebSocket</span>
+      </label>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Center Canvas ─────────────────────────────────────────────── -->
+<main id="center">
+  <div id="canvas-toolbar">
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="adjustZoom(-0.25)">−</button>
+      <span id="zoom-level">Fit</span>
+      <button class="zoom-btn" onclick="adjustZoom(0.25)">+</button>
+      <button class="zoom-btn" onclick="resetZoom()" title="Fit to view">⊡</button>
+    </div>
+    <div class="spacer"></div>
+    <div id="view-tabs">
+      <button class="view-tab active" onclick="setView('split',this)">Split</button>
+      <button class="view-tab" onclick="setView('before',this)">Before</button>
+      <button class="view-tab" onclick="setView('after',this)">After</button>
+      <button class="view-tab" onclick="setView('diff',this)">Diff</button>
+    </div>
+    <div class="spacer"></div>
+    <span id="cursor-coords" style="font-size:10px;font-family:var(--font-code);color:var(--txt3)">x:— y:—</span>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="drop-icon">◈</div>
+      <div class="drop-title">Drop Image Here</div>
+      <div class="drop-sub">PNG · JPEG · WEBP · or click to browse</div>
+      <div class="drop-sub" style="color:var(--txt3);margin-top:4px">Supports float32 HDR images</div>
+    </div>
+
+    <div id="canvas-container" class="hidden">
+      <div class="canvas-split" id="canvas-split">
+        <div id="canvas-before">
+          <span class="canvas-label before-lbl">Original</span>
+          <img id="img-before" draggable="false" onmousemove="trackCursor(event,this)" alt=""/>
+          <canvas id="diff-canvas" style="position:absolute;inset:0;display:none;width:100%;height:100%;object-fit:contain;pointer-events:none"></canvas>
+        </div>
+        <div id="split-divider" title="Drag to resize"></div>
+        <div id="canvas-after">
+          <span class="canvas-label after-lbl">Processed</span>
+          <img id="img-after" draggable="false" alt=""/>
+        </div>
+      </div>
+    </div>
+
+    <div id="processing-overlay">
+      <div class="spin"></div>
+      <div class="proc-label" id="proc-label">Processing...</div>
+      <div class="proc-time" id="proc-time">0ms</div>
+    </div>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stat-item"><span class="stat-val good" id="s-time">—</span><span class="stat-lbl">Time ms</span></div>
+    <div class="stat-item"><span class="stat-val" id="s-mpps">—</span><span class="stat-lbl">MPix/s</span></div>
+    <div class="stat-item"><span class="stat-val" id="s-psnr">—</span><span class="stat-lbl">PSNR dB</span></div>
+    <div class="stat-item"><span class="stat-val" id="s-size">—</span><span class="stat-lbl">Resolution</span></div>
+    <div class="stat-item">
+      <span class="stat-val" id="s-simd">—</span>
+      <span class="stat-lbl">SIMD</span>
+      <span class="stat-badge" id="s-native-badge" style="background:transparent">—</span>
+    </div>
+    <div class="stat-item" style="flex:1;flex-direction:row;gap:10px;align-items:center;min-width:0">
+      <div id="pipeline-progress-wrap"><div id="pipeline-bar"></div></div>
+      <span class="stat-lbl" id="pipeline-status" style="white-space:nowrap">Idle</span>
+    </div>
+  </div>
+</main>
+
+<!-- ── Right Panel ─────────────────────────────────────────────────── -->
+<aside id="panel-right">
+
+  <!-- Histogram -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>▥</span> Histogram <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="hist-wrap"><canvas id="hist-canvas"></canvas></div>
+      <div class="hist-legend">
+        <div class="hist-legend-item"><div class="legend-dot" style="background:#ff6b6b"></div>R</div>
+        <div class="hist-legend-item"><div class="legend-dot" style="background:#6bcb77"></div>G</div>
+        <div class="hist-legend-item"><div class="legend-dot" style="background:#4d96ff"></div>B</div>
+        <div class="hist-legend-item"><div class="legend-dot" style="background:rgba(162,155,254,.7)"></div>Lum</div>
+      </div>
+      <div id="hist-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:9px;font-family:var(--font-code);color:var(--txt2)"></div>
+    </div>
+  </div>
+
+  <!-- Waveform scope -->
+  <div class="section">
+    <div class="section-hdr" onclick="toggleSection(this)">
+      <span>∿</span> Waveform Scope <span class="chevron">▾</span>
+    </div>
+    <div class="section-body collapsed">
+      <canvas id="waveform-canvas" height="80" style="width:100%;height:80px;border-radius:4px;background:var(--bg3)"></canvas>
+      <div style="font-size:9px;color:var(--txt3);font-family:var(--font-code)">RGB waveform · column-averaged luma</div>
+    </div>
+  </div>
+
+  <!-- Color Palette -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>⊛</span> Color Palette <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div id="palette-strip"></div>
+      <div id="palette-info" style="font-size:10px;font-family:var(--font-code);color:var(--txt2);margin-top:4px;line-height:1.6"></div>
+    </div>
+  </div>
+
+  <!-- Image Metrics -->
+  <div class="section">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>◈</span> Quality Metrics <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="metric-grid">
+        <div class="metric-box"><div class="metric-box-val" id="m-psnr">—</div><div class="metric-box-lbl">PSNR (dB)</div></div>
+        <div class="metric-box"><div class="metric-box-val" id="m-time">—</div><div class="metric-box-lbl">Elapsed ms</div></div>
+        <div class="metric-box"><div class="metric-box-val" id="m-mpps">—</div><div class="metric-box-lbl">MPix/s</div></div>
+        <div class="metric-box"><div class="metric-box-val" id="m-threads">—</div><div class="metric-box-lbl">Threads</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline Panel (tab-controlled) -->
+  <div class="section" id="tab-pipeline-panel" style="display:none">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>⊞</span> Pipeline Steps <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="pipe-add-row">
+        <select id="pipe-alg-sel">
+          <option value="gaussian_blur">Gaussian Blur</option>
+          <option value="bilateral_filter">Bilateral Filter</option>
+          <option value="sobel_edges">Sobel Edges</option>
+          <option value="canny_edges">Canny Edges</option>
+          <option value="unsharp_mask">Unsharp Mask</option>
+          <option value="histogram_equalization">Hist. Equalization</option>
+          <option value="tone_map_aces">ACES Tone Map</option>
+          <option value="tone_map_reinhard">Reinhard Tone Map</option>
+          <option value="median_filter">Median Filter</option>
+          <option value="dilate">Dilate</option>
+          <option value="erode">Erode</option>
+          <option value="morph_open">Morph Open</option>
+          <option value="neural_denoise">Neural Denoise</option>
+          <option value="super_resolution">Super Resolution</option>
+          <option value="depth_estimation">Depth Estimation</option>
+          <option value="add_noise">Add Noise</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="addPipelineStep()">+ Add</button>
+      </div>
+      <div id="pipeline-list"></div>
+      <div class="btn-group" style="margin-top:6px">
+        <button class="btn btn-primary btn-sm" onclick="runPipeline()">▶ Run</button>
+        <button class="btn btn-danger btn-sm" onclick="stopPipeline()">■ Stop</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearPipeline()">✕ Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Benchmark Panel (tab-controlled) -->
+  <div class="section" id="tab-bench-panel" style="display:none">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>⌬</span> Benchmark Results <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div class="btn-group">
+        <button class="btn btn-primary btn-sm" id="bench-btn" onclick="runBenchmark()">⌬ Run Benchmark</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearBenchmark()">✕ Clear</button>
+      </div>
+      <div style="font-size:9px;color:var(--txt3);font-family:var(--font-code)">Runs 5 iterations per algorithm</div>
+      <div class="bench-wrap" id="bench-bars"></div>
+    </div>
+  </div>
+
+  <!-- Neural Panel (tab-controlled) -->
+  <div class="section" id="tab-neural-panel" style="display:none">
+    <div class="section-hdr open" onclick="toggleSection(this)">
+      <span>✦</span> Neural Models <span class="chevron">▾</span>
+    </div>
+    <div class="section-body">
+      <div id="neural-grid">
+        <div class="neural-card" onclick="selectNeuralAlg('super_resolution',this)">
+          <div class="neural-card-icon">✦</div>
+          <div class="neural-card-name">Super Resolution</div>
+          <div class="neural-card-desc">RRDB × 2–4× upscale with perceptual loss</div>
+          <div class="neural-card-badge">RRDB / ESRGAN</div>
+        </div>
+        <div class="neural-card" onclick="selectNeuralAlg('neural_denoise',this)">
+          <div class="neural-card-icon">✧</div>
+          <div class="neural-card-name">Neural Denoise</div>
+          <div class="neural-card-desc">Blind denoising with nonlinear activation-free net</div>
+          <div class="neural-card-badge">NAFNet</div>
+        </div>
+        <div class="neural-card" onclick="selectNeuralAlg('depth_estimation',this)">
+          <div class="neural-card-icon">⬡</div>
+          <div class="neural-card-name">Depth Estimation</div>
+          <div class="neural-card-desc">Monocular depth with colorized heatmap output</div>
+          <div class="neural-card-badge">MiDaS / DPT</div>
+        </div>
+        <div class="neural-card" onclick="selectNeuralAlg('colorize_grayscale',this)">
+          <div class="neural-card-icon">❋</div>
+          <div class="neural-card-name">Colorize</div>
+          <div class="neural-card-desc">Automatic grayscale colorization with learned priors</div>
+          <div class="neural-card-badge">CNN</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:4px" onclick="applyAlgorithm()">⚡ Run Neural</button>
+    </div>
+  </div>
+
+  <!-- NUMA / System -->
+  <div class="section">
+    <div class="section-hdr" onclick="toggleSection(this)">
+      <span>⬡</span> System / NUMA <span class="chevron">▾</span>
+    </div>
+    <div class="section-body collapsed">
+      <div id="numa-info" style="font-size:10px;font-family:var(--font-code);color:var(--txt2);display:flex;flex-direction:column;gap:3px;line-height:1.7"></div>
+    </div>
+  </div>
+
+</aside>
+</div><!-- #app -->
+
+<div id="notif-stack"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// CONSTANTS & STATE
+// ════════════════════════════════════════════════════════════════
+const API = 'http://localhost:5000/api';
+
+const STATE = {
+  originalURL: null,
+  processedURL: null,
+  currentAlg: 'gaussian_blur',
+  params: {},
+  systemInfo: {},
+  histChart: null,
+  pipelineSteps: [],
+  zoom: 1,
+  view: 'split',
+  processing: false,
+  realtimeWS: false,
+  wsConnected: false,
+  autoApply: false,
+  imgW: 0, imgH: 0,
+  procTimer: null,
+  socket: null,
+};
+
+// ════════════════════════════════════════════════════════════════
+// ALG PARAMS CONFIG
+// ════════════════════════════════════════════════════════════════
+const ALG_PARAMS = {
+  gaussian_blur:         [{id:'sigma',       label:'Sigma (σ)',         type:'range', min:.5,  max:20,  step:.5,  def:2}],
+  bilateral_filter:      [{id:'sigma_s',     label:'Spatial σ',         type:'range', min:1,   max:30,  step:1,   def:5},
+                          {id:'sigma_r',     label:'Range σ',           type:'range', min:.01, max:.5,  step:.01, def:.1}],
+  median_filter:         [{id:'ksize',       label:'Kernel Size',       type:'range', min:3,   max:15,  step:2,   def:3}],
+  sobel_edges:           [],
+  canny_edges:           [{id:'low_thresh',  label:'Low Threshold',     type:'range', min:.01, max:.3,  step:.01, def:.05},
+                          {id:'high_thresh', label:'High Threshold',    type:'range', min:.05, max:.5,  step:.01, def:.15},
+                          {id:'sigma',       label:'Blur σ',            type:'range', min:.5,  max:5,   step:.25, def:1}],
+  laplacian:             [{id:'sigma',       label:'Pre-blur σ',        type:'range', min:.5,  max:5,   step:.25, def:1}],
+  guided_filter:         [{id:'radius',      label:'Guide Radius',      type:'range', min:1,   max:20,  step:1,   def:5},
+                          {id:'eps',         label:'Regularization ε',  type:'range', min:.0001,max:.5, step:.0001,def:.01}],
+  histogram_equalization:[],
+  tone_map_reinhard:     [{id:'exposure',    label:'Exposure',          type:'range', min:.1,  max:4,   step:.1,  def:1},
+                          {id:'gamma',       label:'Gamma',             type:'range', min:.5,  max:3,   step:.1,  def:2.2}],
+  tone_map_aces:         [{id:'exposure',    label:'Exposure',          type:'range', min:.1,  max:4,   step:.1,  def:1}],
+  rgb_to_hsv:            [],
+  add_noise:             [{id:'sigma',       label:'Noise Level (σ)',   type:'range', min:.01, max:.3,  step:.01, def:.05},
+                          {id:'type',        label:'Noise Type',        type:'select',opts:['gaussian','salt_pepper'],def:'gaussian'}],
+  unsharp_mask:          [{id:'sigma',       label:'Blur σ',            type:'range', min:.5,  max:5,   step:.25, def:1.5},
+                          {id:'strength',    label:'Strength',          type:'range', min:.1,  max:5,   step:.1,  def:1.5},
+                          {id:'threshold',   label:'Threshold',         type:'range', min:0,   max:.2,  step:.005,def:0}],
+  dilate:                [{id:'ksize',       label:'Kernel Size',       type:'range', min:3,   max:21,  step:2,   def:5}],
+  erode:                 [{id:'ksize',       label:'Kernel Size',       type:'range', min:3,   max:21,  step:2,   def:5}],
+  morph_open:            [{id:'ksize',       label:'Kernel Size',       type:'range', min:3,   max:21,  step:2,   def:5}],
+  morph_close:           [{id:'ksize',       label:'Kernel Size',       type:'range', min:3,   max:21,  step:2,   def:5}],
+  resize:                [{id:'width',       label:'Width (px)',         type:'number',min:64,  max:4096,def:512},
+                          {id:'height',      label:'Height (px)',        type:'number',min:64,  max:4096,def:512}],
+  frequency_highpass:    [{id:'cutoff',      label:'Cutoff Frequency',  type:'range', min:.01, max:.5,  step:.01, def:.1}],
+  frequency_lowpass:     [{id:'cutoff',      label:'Cutoff Frequency',  type:'range', min:.01, max:.5,  step:.01, def:.2}],
+  super_resolution:      [{id:'scale_factor',label:'Scale Factor ×',    type:'range', min:2,   max:4,   step:2,   def:2},
+                          {id:'tile_size',   label:'Tile Size',         type:'range', min:64,  max:512, step:64,  def:256}],
+  neural_denoise:        [{id:'sigma',       label:'Noise σ (estimate)',type:'range', min:5,   max:75,  step:5,   def:25},
+                          {id:'strength',    label:'Blend Strength',    type:'range', min:.1,  max:1,   step:.05, def:1}],
+  depth_estimation:      [],
+  colorize_grayscale:    [{id:'strength',    label:'Colorize Strength', type:'range', min:0,   max:1,   step:.05, def:1}],
+};
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  initHistChart();
+  initDropZone();
+  initSplitDivider();
+  renderParams();
+  fetchSystemInfo();
+  initWebSocket();
+  // Default gradient on load for demo
+  setTimeout(() => loadSample('gradient'), 600);
+});
+
+// ════════════════════════════════════════════════════════════════
+// SYSTEM INFO
+// ════════════════════════════════════════════════════════════════
+async function fetchSystemInfo() {
+  try {
+    const r = await fetch(`${API}/system_info`);
+    const d = await r.json();
+    STATE.systemInfo = d;
+    document.getElementById('sys-badge-txt').textContent =
+      `${d.simd_level || 'Python'} · ${d.logical_cores || '?'}T`;
+    document.getElementById('s-simd').textContent = d.simd_level || 'Py';
+    document.getElementById('m-threads').textContent = d.logical_cores || '?';
+    const nb = document.getElementById('s-native-badge');
+    if (d.native_engine) {
+      nb.textContent = 'C++ Native';
+      nb.style.cssText = 'background:color-mix(in srgb,var(--acc3) 20%,transparent);color:var(--acc3)';
+    } else {
+      nb.textContent = 'Python Ref';
+      nb.style.cssText = 'background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)';
+    }
+    const numaEl = document.getElementById('numa-info');
+    numaEl.innerHTML = [
+      ['Engine',    d.native_engine ? 'C++ SIMD Extension' : 'Python Reference', d.native_engine ? 'var(--acc3)' : 'var(--warn)'],
+      ['SIMD Level',d.simd_level || 'N/A',       'var(--acc4)'],
+      ['Logical Cores', d.logical_cores || '?',   'var(--txt)'],
+      ['Physical Cores',d.physical_cores || '?',  'var(--txt)'],
+      ['NUMA Nodes',    d.numa_nodes || 1,        'var(--txt)'],
+      ['NUMA Available',d.numa_available ? '✓ Yes' : '✗ No', d.numa_available ? 'var(--acc3)' : 'var(--txt3)'],
+      ['AVX-512',   d.avx512 ? '✓ Supported' : '✗',  d.avx512  ? 'var(--acc3)' : 'var(--txt3)'],
+      ['AVX2',      d.avx2   ? '✓ Supported' : '✗',  d.avx2    ? 'var(--acc3)' : 'var(--txt3)'],
+      ['FMA',       d.fma    ? '✓ Supported' : '✗',  d.fma     ? 'var(--acc3)' : 'var(--txt3)'],
+    ].map(([k,v,c]) =>
+      `<div style="display:flex;justify-content:space-between">
+         <span style="color:var(--txt3)">${k}</span>
+         <span style="color:${c};font-weight:700">${v}</span>
+       </div>`
+    ).join('');
+  } catch(e) {
+    document.getElementById('sys-badge-txt').textContent = 'Server Offline';
+    notify('Server not reachable — start server.py first.', 'error');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// WEBSOCKET
+// ════════════════════════════════════════════════════════════════
+function initWebSocket() {
+  try {
+    const socket = io('http://localhost:5000', {
+      transports:['websocket','polling'], timeout:3000, reconnectionAttempts:3
+    });
+    STATE.socket = socket;
+    socket.on('connect', () => {
+      STATE.wsConnected = true;
+      notify('WebSocket connected', 'success');
+      document.querySelector('.badge-dot').style.background = 'var(--acc3)';
+    });
+    socket.on('disconnect', () => {
+      STATE.wsConnected = false;
+      document.querySelector('.badge-dot').style.background = 'var(--warn)';
+    });
+    socket.on('frame_result',       onFrameResult);
+    socket.on('pipeline_stage',     onPipelineStage);
+    socket.on('pipeline_complete',  onPipelineComplete);
+    socket.on('pipeline_stopped',   () => { setPipelineStatus('Stopped'); setPipelineProgress(0); });
+    socket.on('error',              e  => notify(e.message || 'Socket error', 'error'));
+    socket.on('system_info',        d  => { STATE.systemInfo = {...STATE.systemInfo, ...d}; });
+  } catch(e) { /* SocketIO not in env */ }
+}
+
+function toggleRealtimeWS() {
+  STATE.realtimeWS = document.getElementById('realtime-ws').checked;
+  if (STATE.realtimeWS && !STATE.wsConnected)
+    { notify('WebSocket not connected', 'warn'); document.getElementById('realtime-ws').checked = false; STATE.realtimeWS = false; }
+}
+
+function onFrameResult(data) {
+  STATE.processedURL = data.result;
+  const el = document.getElementById('img-after');
+  el.src = data.result; el.style.display = 'block';
+  updateStats(data.stats);
+  STATE.processing = false;
+  showOverlay(false);
+}
+
+// ════════════════════════════════════════════════════════════════
+// DROP ZONE / FILE INPUT
+// ════════════════════════════════════════════════════════════════
+function initDropZone() {
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  fi.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); fi.value = ''; });
+}
+
+function loadFile(f) {
+  const r = new FileReader();
+  r.onload = e => setImage(e.target.result, f.name);
+  r.readAsDataURL(f);
+}
+
+function setImage(url, name = 'image') {
+  STATE.originalURL = url;
+  STATE.processedURL = null;
+  const before = document.getElementById('img-before');
+  before.onload = () => {
+    STATE.imgW = before.naturalWidth;
+    STATE.imgH = before.naturalHeight;
+    document.getElementById('img-info').innerHTML =
+      `<span style="color:var(--txt2)">${name}</span><br>${STATE.imgW} × ${STATE.imgH} px`;
+    document.getElementById('s-size').textContent = `${STATE.imgW}×${STATE.imgH}`;
+    document.getElementById('img-after').style.display = 'none';
+    document.getElementById('img-after').src = '';
+    document.getElementById('drop-zone').classList.add('hidden');
+    document.getElementById('canvas-container').classList.remove('hidden');
+    refreshHistogram(url);
+    refreshPalette(url);
+    // Auto-set resize defaults
+    const wp = STATE.params; wp.width = STATE.imgW * 2; wp.height = STATE.imgH * 2;
+  };
+  before.src = url;
+}
+
+// ════════════════════════════════════════════════════════════════
+// SAMPLE IMAGES
+// ════════════════════════════════════════════════════════════════
+function loadSample(type) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const ctx = c.getContext('2d');
+  if (type === 'gradient') {
+    const g = ctx.createLinearGradient(0, 0, 512, 512);
+    g.addColorStop(0, '#6c63ff'); g.addColorStop(.4, '#ff6b9d'); g.addColorStop(1, '#00d4aa');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+    const g2 = ctx.createRadialGradient(180, 180, 0, 180, 180, 300);
+    g2.addColorStop(0, 'rgba(255,255,255,.25)'); g2.addColorStop(1, 'rgba(0,0,0,.4)');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, 512, 512);
+    // Add some structure
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    for (let i = 0; i < 512; i += 32) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+    }
+  } else if (type === 'noise') {
+    const id = ctx.createImageData(512, 512);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = Math.random() * 255 | 0;
+      d[i] = v + (Math.random() * 40 | 0);
+      d[i+1] = v + (Math.random() * 40 | 0);
+      d[i+2] = v + (Math.random() * 40 | 0);
+      d[i+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+  } else if (type === 'checker') {
+    const sz = 32;
+    const colors = ['#0f0f17','#6c63ff','#1a1a28','#ff6b9d'];
+    for (let y = 0; y < 512; y += sz)
+      for (let x = 0; x < 512; x += sz) {
+        ctx.fillStyle = colors[((x/sz) + (y/sz)) % colors.length];
+        ctx.fillRect(x, y, sz, sz);
+      }
+  } else if (type === 'mandelbrot') {
+    const id = ctx.createImageData(512, 512);
+    const d = id.data;
+    for (let py = 0; py < 512; py++) for (let px = 0; px < 512; px++) {
+      let x0 = (px / 512) * 3.5 - 2.5, y0 = (py / 512) * 2 - 1, x = 0, y = 0, it = 0;
+      while (x*x + y*y <= 4 && it < 80) { const xt = x*x - y*y + x0; y = 2*x*y + y0; x = xt; it++; }
+      const t = it / 80;
+      const i = (py * 512 + px) * 4;
+      d[i]   = Math.floor(9 * (1-t) * t**3 * 255);
+      d[i+1] = Math.floor(15 * (1-t)**2 * t**2 * 255);
+      d[i+2] = Math.floor(8.5 * (1-t)**3 * t * 255);
+      d[i+3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+  }
+  setImage(c.toDataURL('image/png'), type + '.png');
+}
+
+// ════════════════════════════════════════════════════════════════
+// ALGORITHM SELECTION
+// ════════════════════════════════════════════════════════════════
+function selectAlg(btn) {
+  document.querySelectorAll('.alg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  STATE.currentAlg = btn.dataset.alg;
+  renderParams();
+}
+
+function selectNeuralAlg(alg, card) {
+  document.querySelectorAll('.neural-card').forEach(c => c.classList.remove('active-card'));
+  card.classList.add('active-card');
+  STATE.currentAlg = alg;
+  // Sync left panel button
+  document.querySelectorAll('.alg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.alg === alg);
+  });
+  renderParams();
+}
+
+// ════════════════════════════════════════════════════════════════
+// PARAMS RENDERING
+// ════════════════════════════════════════════════════════════════
+function renderParams() {
+  const panel = document.getElementById('param-panel');
+  const defs  = ALG_PARAMS[STATE.currentAlg] || [];
+  if (!defs.length) {
+    panel.innerHTML = `<div style="font-size:10px;color:var(--txt3);font-family:var(--font-code)">No parameters — algorithm runs with defaults</div>`;
+    return;
+  }
+  panel.innerHTML = defs.map(p => {
+    if (p.type === 'range') {
+      const v = STATE.params[p.id] !== undefined ? STATE.params[p.id] : p.def;
+      return `<div class="param-row">
+        <div class="param-label">
+          <span>${p.label}</span>
+          <span class="param-val" id="pv-${p.id}">${parseFloat(v).toFixed(p.step < 0.01 ? 4 : p.step < 1 ? 2 : 0)}</span>
+        </div>
+        <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}" id="pr-${p.id}"
+          oninput="onParamChange('${p.id}',this.value,'${p.step}')"/>
+      </div>`;
+    } else if (p.type === 'select') {
+      const v = STATE.params[p.id] || p.def;
+      return `<div class="param-row">
+        <div class="param-label"><span>${p.label}</span></div>
+        <select id="ps-${p.id}" onchange="onParamChange('${p.id}',this.value,'str')">
+          ${p.opts.map(o => `<option value="${o}" ${o===v?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>`;
+    } else if (p.type === 'number') {
+      const def = p.id === 'width' ? (STATE.imgW * 2 || p.def) : (STATE.imgH * 2 || p.def);
+      const v   = STATE.params[p.id] !== undefined ? STATE.params[p.id] : def;
+      return `<div class="param-row">
+        <div class="param-label"><span>${p.label}</span></div>
+        <input type="number" min="${p.min}" max="${p.max}" value="${v}" id="pn-${p.id}"
+          onchange="onParamChange('${p.id}',parseInt(this.value),'int')"/>
+      </div>`;
+    }
+    return '';
+  }).join('');
+}
+
+function onParamChange(id, val, stepHint) {
+  const num = parseFloat(val);
+  STATE.params[id] = isNaN(num) ? val : num;
+  const pvEl = document.getElementById(`pv-${id}`);
+  if (pvEl) {
+    const decimals = stepHint === 'str' || stepHint === 'int' ? 0
+                   : parseFloat(stepHint) < 0.01 ? 4
+                   : parseFloat(stepHint) < 1 ? 2 : 0;
+    pvEl.textContent = typeof val === 'string' && isNaN(+val) ? val : parseFloat(val).toFixed(decimals);
+  }
+  if (STATE.autoApply && STATE.originalURL) applyAlgorithm();
+}
+
+function getCurrentParams() {
+  const defs = ALG_PARAMS[STATE.currentAlg] || [];
+  const p = {};
+  defs.forEach(d => {
+    if (d.type === 'range') {
+      const el = document.getElementById(`pr-${d.id}`);
+      p[d.id] = el ? parseFloat(el.value) : (STATE.params[d.id] ?? d.def);
+    } else if (d.type === 'select') {
+      const el = document.getElementById(`ps-${d.id}`);
+      p[d.id] = el ? el.value : (STATE.params[d.id] ?? d.def);
+    } else if (d.type === 'number') {
+      const el = document.getElementById(`pn-${d.id}`);
+      p[d.id] = el ? parseInt(el.value) : (STATE.params[d.id] ?? d.def);
+    }
+  });
+  return p;
+}
+
+// ════════════════════════════════════════════════════════════════
+// APPLY ALGORITHM
+// ════════════════════════════════════════════════════════════════
+async function applyAlgorithm() {
+  if (!STATE.originalURL) { notify('No image loaded', 'warn'); return; }
+  if (STATE.processing)   return;
+  STATE.processing = true;
+  const src = STATE.processedURL || STATE.originalURL;
+
+  // Realtime WebSocket path
+  if (STATE.realtimeWS && STATE.wsConnected && STATE.socket) {
+    showOverlay(true, `Realtime: ${STATE.currentAlg}`);
+    STATE.socket.emit('process_frame', {
+      image: src, algorithm: STATE.currentAlg,
+      params: getCurrentParams(), frame_id: Date.now()
+    });
+    return; // result comes back via onFrameResult
+  }
+
+  showOverlay(true, `Running ${STATE.currentAlg}...`);
+  const procStart = performance.now();
+  STATE.procTimer = setInterval(() => {
+    document.getElementById('proc-time').textContent =
+      ((performance.now() - procStart) | 0) + 'ms';
+  }, 50);
+
+  try {
+    const resp = await fetch(`${API}/process`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: src, algorithm: STATE.currentAlg, params: getCurrentParams()})
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.error) { notify(data.error, 'error'); return; }
+
+    STATE.processedURL = data.result;
+    const imgAfter = document.getElementById('img-after');
+    imgAfter.src = data.result;
+    imgAfter.style.display = 'block';
+    updateStats(data.stats);
+    refreshHistogram(data.result);
+    notify(`${STATE.currentAlg} · ${data.stats.elapsed_ms?.toFixed(1)}ms · ${data.stats.throughput_mpps?.toFixed(1)} MPix/s`, 'success');
+
+    if (STATE.view === 'diff') renderDiff();
+  } catch(e) {
+    notify('Server error: ' + e.message, 'error');
+  } finally {
+    STATE.processing = false;
+    showOverlay(false);
+    clearInterval(STATE.procTimer);
+  }
+}
+
+function showOverlay(on, label = 'Processing...') {
+  const el = document.getElementById('processing-overlay');
+  el.classList.toggle('active', on);
+  if (on) {
+    document.getElementById('proc-label').textContent = label;
+    document.getElementById('proc-time').textContent = '0ms';
+  }
+}
+
+function updateStats(s) {
+  if (!s) return;
+  const t = parseFloat(s.elapsed_ms) || 0;
+  document.getElementById('s-time').textContent    = t.toFixed(1);
+  document.getElementById('s-mpps').textContent    = (parseFloat(s.throughput_mpps) || 0).toFixed(1);
+  document.getElementById('s-psnr').textContent    = s.psnr != null ? parseFloat(s.psnr).toFixed(1) : '—';
+  if (s.output_size) document.getElementById('s-size').textContent = s.output_size.join('×');
+  document.getElementById('m-psnr').textContent   = s.psnr != null ? parseFloat(s.psnr).toFixed(2) : '—';
+  document.getElementById('m-time').textContent   = t.toFixed(2);
+  document.getElementById('m-mpps').textContent   = (parseFloat(s.throughput_mpps) || 0).toFixed(2);
+  if (s.threads) document.getElementById('m-threads').textContent = s.threads;
+  document.getElementById('s-time').className = 'stat-val ' + (t < 30 ? 'good' : t < 200 ? '' : 'warn');
+}
+
+// ════════════════════════════════════════════════════════════════
+// HISTOGRAM
+// ════════════════════════════════════════════════════════════════
+function initHistChart() {
+  const ctx = document.getElementById('hist-canvas').getContext('2d');
+  STATE.histChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: Array.from({length:256},(_,i)=>i),
+      datasets:[
+        {label:'R', data:[], borderColor:'rgba(255,107,107,.85)', backgroundColor:'rgba(255,107,107,.12)', fill:true, pointRadius:0, borderWidth:1.5, tension:.35},
+        {label:'G', data:[], borderColor:'rgba(107,203,119,.85)', backgroundColor:'rgba(107,203,119,.08)', fill:true, pointRadius:0, borderWidth:1.5, tension:.35},
+        {label:'B', data:[], borderColor:'rgba(77,150,255,.85)',  backgroundColor:'rgba(77,150,255,.08)',  fill:true, pointRadius:0, borderWidth:1.5, tension:.35},
+        {label:'L', data:[], borderColor:'rgba(162,155,254,.5)', backgroundColor:'transparent', fill:false, pointRadius:0, borderWidth:1, tension:.35, borderDash:[3,3]},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:{duration:150},
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{display:false},y:{display:false,beginAtZero:true}},
+    }
+  });
+}
+
+async function refreshHistogram(url) {
+  try {
+    const r = await fetch(`${API}/histogram`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: url, bins: 256})
+    });
+    const d = await r.json();
+    const ch = STATE.histChart;
+    ch.data.datasets[0].data = d.red?.bins   || [];
+    ch.data.datasets[1].data = d.green?.bins || [];
+    ch.data.datasets[2].data = d.blue?.bins  || [];
+    const lum = (d.red?.bins||[]).map((v,i) => (v + (d.green?.bins?.[i]||0) + (d.blue?.bins?.[i]||0)) / 3);
+    ch.data.datasets[3].data = lum;
+    ch.update('none');
+    // Stats row
+    document.getElementById('hist-stats').innerHTML = ['red','green','blue'].map(k =>
+      d[k] ? `<div style="text-align:center">
+        <div style="color:var(--txt3);font-size:8px;text-transform:uppercase;letter-spacing:.1em">${k[0].toUpperCase()}</div>
+        <div>μ ${parseFloat(d[k].mean||0).toFixed(3)}</div>
+        <div>σ ${parseFloat(d[k].std||0).toFixed(3)}</div>
+      </div>` : ''
+    ).join('');
+    renderWaveform(d);
+  } catch(e) {}
+}
+
+function renderWaveform(histData) {
+  const c  = document.getElementById('waveform-canvas');
+  const w  = c.width = c.offsetWidth || 280;
+  const h  = c.height = 80;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0f0f17';
+  ctx.fillRect(0, 0, w, h);
+  [['red','rgba(255,80,80,.7)'],['green','rgba(80,200,100,.7)'],['blue','rgba(80,120,255,.7)']].forEach(([k,col]) => {
+    const bins = histData[k]?.bins || [];
+    if (!bins.length) return;
+    const mx = Math.max(...bins) || 1;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    bins.forEach((v, i) => {
+      const x = (i / 255) * w;
+      const y = h - (v / mx) * h * 0.9;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// COLOR PALETTE
+// ════════════════════════════════════════════════════════════════
+async function refreshPalette(url) {
+  try {
+    const r = await fetch(`${API}/palette`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: url, k: 8})
+    });
+    const d = await r.json();
+    const strip = document.getElementById('palette-strip');
+    strip.innerHTML = d.palette.map(c => {
+      const rr = Math.round(c.r * 255), gg = Math.round(c.g * 255), bb = Math.round(c.b * 255);
+      const hex = '#' + [rr,gg,bb].map(v => v.toString(16).padStart(2,'0')).join('');
+      const pct = (c.weight * 100).toFixed(1);
+      return `<div class="pal-swatch" style="background:rgb(${rr},${gg},${bb})" title="${hex} · ${pct}%" onclick="copyHex('${hex}')">
+        <span class="pal-pct">${pct}%</span>
+      </div>`;
+    }).join('');
+    document.getElementById('palette-info').textContent =
+      `${d.palette.length} dominant colors · click to copy hex`;
+  } catch(e) {}
+}
+
+function copyHex(hex) {
+  navigator.clipboard?.writeText(hex).then(() => notify(`Copied ${hex}`, 'info'));
+}
+
+// ════════════════════════════════════════════════════════════════
+// DIFF VIEW
+// ════════════════════════════════════════════════════════════════
+function renderDiff() {
+  if (!STATE.originalURL || !STATE.processedURL) return;
+  const before = document.getElementById('img-before');
+  const after  = document.getElementById('img-after');
+  if (!before.complete || !after.complete) return;
+
+  const w = before.naturalWidth, h = before.naturalHeight;
+  const dc = document.getElementById('diff-canvas');
+  dc.width = w; dc.height = h;
+  const ctx = dc.getContext('2d');
+
+  const c1 = document.createElement('canvas'); c1.width = w; c1.height = h;
+  const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+  c1.getContext('2d').drawImage(before, 0, 0, w, h);
+  c2.getContext('2d').drawImage(after,  0, 0, w, h);
+
+  const d1 = c1.getContext('2d').getImageData(0,0,w,h).data;
+  const d2 = c2.getContext('2d').getImageData(0,0,w,h).data;
+  const out = ctx.createImageData(w, h);
+
+  for (let i = 0; i < d1.length; i += 4) {
+    const dr = Math.abs(d1[i]   - d2[i]);
+    const dg = Math.abs(d1[i+1] - d2[i+1]);
+    const db = Math.abs(d1[i+2] - d2[i+2]);
+    const mag = Math.min(255, (dr + dg + db));
+    // Heatmap: blue→green→red
+    out.data[i]   = mag > 128 ? (mag - 128) * 2 : 0;
+    out.data[i+1] = mag < 128 ? mag * 2 : (255 - mag) * 2;
+    out.data[i+2] = mag < 64  ? 255 - mag * 2 : 0;
+    out.data[i+3] = 255;
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+// ════════════════════════════════════════════════════════════════
+// VIEW MODES
+// ════════════════════════════════════════════════════════════════
+function setView(mode, btn) {
+  STATE.view = mode;
+  document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const split  = document.getElementById('canvas-split');
+  const before = document.getElementById('canvas-before');
+  const after  = document.getElementById('canvas-after');
+  const div    = document.getElementById('split-divider');
+  const dc     = document.getElementById('diff-canvas');
+
+  dc.style.display = 'none';
+  split.className  = '';
+  before.style.flex = ''; after.style.flex = '';
+  div.style.display = '';
+
+  if (mode === 'split') {
+    before.style.display = ''; after.style.display = '';
+    div.style.display = '';
+    before.style.borderRight = '2px solid var(--acc)';
+  } else if (mode === 'before') {
+    split.className = 'view-single';
+    before.style.display = ''; after.style.display = 'none';
+    div.style.display = 'none';
+    before.style.borderRight = 'none';
+  } else if (mode === 'after') {
+    before.style.display = 'none'; after.style.display = '';
+    div.style.display = 'none';
+    after.style.flex = '1';
+  } else if (mode === 'diff') {
+    before.style.display = ''; after.style.display = 'none';
+    div.style.display = 'none';
+    before.style.borderRight = 'none';
+    before.style.flex = '1';
+    dc.style.display = 'block';
+    renderDiff();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// SPLIT DIVIDER
+// ════════════════════════════════════════════════════════════════
+function initSplitDivider() {
+  const div   = document.getElementById('split-divider');
+  const wrap  = document.getElementById('canvas-split');
+  let drag    = false, startX = 0;
+  div.addEventListener('mousedown', e => { drag = true; startX = e.clientX; e.preventDefault(); });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const rect = wrap.getBoundingClientRect();
+    const pct  = Math.max(10, Math.min(90, (e.clientX - rect.left) / rect.width * 100));
+    document.getElementById('canvas-before').style.flex = `0 0 ${pct}%`;
+    document.getElementById('canvas-after').style.flex  = `0 0 ${100 - pct}%`;
+    div.style.left = `${pct}%`;
+  });
+  window.addEventListener('mouseup', () => { drag = false; });
+}
+
+// ════════════════════════════════════════════════════════════════
+// ZOOM
+// ════════════════════════════════════════════════════════════════
+function adjustZoom(delta) {
+  STATE.zoom = Math.max(0.1, Math.min(8, STATE.zoom + delta));
+  applyZoom();
+}
+function resetZoom() { STATE.zoom = 1; applyZoom(); }
+function applyZoom() {
+  const z = STATE.zoom;
+  document.getElementById('zoom-level').textContent = Math.round(z * 100) + '%';
+  ['img-before','img-after'].forEach(id => {
+    const el = document.getElementById(id);
+    el.style.transform = `scale(${z})`;
+    el.style.transformOrigin = 'center center';
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CURSOR TRACKING
+// ════════════════════════════════════════════════════════════════
+function trackCursor(e, img) {
+  const r  = img.getBoundingClientRect();
+  const sx = img.naturalWidth  / r.width;
+  const sy = img.naturalHeight / r.height;
+  const x  = Math.round((e.clientX - r.left) * sx);
+  const y  = Math.round((e.clientY - r.top)  * sy);
+  document.getElementById('cursor-coords').textContent = `x:${x} y:${y}`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTIONS
+// ════════════════════════════════════════════════════════════════
+function resetToOriginal() {
+  STATE.processedURL = null;
+  document.getElementById('img-after').style.display = 'none';
+  document.getElementById('img-after').src = '';
+  if (STATE.originalURL) refreshHistogram(STATE.originalURL);
+  notify('Reset to original', 'info');
+}
+
+function swapImages() {
+  if (!STATE.processedURL) { notify('No processed image to swap', 'warn'); return; }
+  const tmp = STATE.originalURL;
+  STATE.originalURL   = STATE.processedURL;
+  STATE.processedURL  = null;
+  document.getElementById('img-before').src = STATE.originalURL;
+  document.getElementById('img-after').style.display = 'none';
+  notify('Swapped — processed is now the source', 'info');
+}
+
+function downloadResult() {
+  const url = STATE.processedURL || STATE.originalURL;
+  if (!url) { notify('Nothing to export', 'warn'); return; }
+  const a = document.createElement('a');
+  a.href = url; a.download = `simd_result_${STATE.currentAlg}.png`;
+  a.click();
+  notify('Image exported', 'success');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PIPELINE
+// ════════════════════════════════════════════════════════════════
+function addPipelineStep() {
+  const alg = document.getElementById('pipe-alg-sel').value;
+  STATE.pipelineSteps.push({ algorithm: alg, params: {}, id: Date.now() });
+  renderPipeline();
+}
+
+function removePipelineStep(id) {
+  STATE.pipelineSteps = STATE.pipelineSteps.filter(s => s.id !== id);
+  renderPipeline();
+}
+
+function clearPipeline() { STATE.pipelineSteps = []; renderPipeline(); }
+
+function renderPipeline() {
+  const list = document.getElementById('pipeline-list');
+  if (!STATE.pipelineSteps.length) {
+    list.innerHTML = `<div style="font-size:10px;color:var(--txt3);font-family:var(--font-code);text-align:center;padding:12px">
+      No steps — add algorithms above</div>`; return;
+  }
+  list.innerHTML = STATE.pipelineSteps.map((s, i) => `
+    <div class="pipeline-step" id="step-${s.id}">
+      <span class="step-num">${i + 1}</span>
+      <span style="flex:1">${s.algorithm.replace(/_/g, ' ')}</span>
+      <button class="step-remove" onclick="removePipelineStep(${s.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function runPipeline() {
+  if (!STATE.originalURL)          { notify('No image loaded', 'warn'); return; }
+  if (!STATE.pipelineSteps.length) { notify('Pipeline is empty', 'warn'); return; }
+
+  if (STATE.wsConnected && STATE.socket) {
+    setPipelineStatus('Running via WebSocket...');
+    setPipelineProgress(0);
+    STATE.socket.emit('start_pipeline', {
+      image: STATE.originalURL,
+      stages: STATE.pipelineSteps.map(s => ({ algorithm: s.algorithm, params: s.params }))
+    });
+  } else {
+    // HTTP fallback — sequential
+    setPipelineStatus('Running sequential...');
+    let current = STATE.originalURL;
+    for (let i = 0; i < STATE.pipelineSteps.length; i++) {
+      const step = STATE.pipelineSteps[i];
+      document.getElementById(`step-${step.id}`)?.classList.add('active-step');
+      setPipelineProgress((i / STATE.pipelineSteps.length));
+      try {
+        const r = await fetch(`${API}/process`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({image: current, algorithm: step.algorithm, params: step.params})
+        });
+        const d = await r.json();
+        if (d.result) {
+          current = d.result;
+          updateStats(d.stats);
+        }
+      } catch(e) { notify(`Step ${i+1} failed: ${e.message}`, 'error'); }
+      document.getElementById(`step-${step.id}`)?.classList.remove('active-step');
+      document.getElementById(`step-${step.id}`)?.classList.add('done');
+    }
+    STATE.processedURL = current;
+    document.getElementById('img-after').src = current;
+    document.getElementById('img-after').style.display = 'block';
+    setPipelineStatus('Complete ✓');
+    setPipelineProgress(1);
+    notify(`Pipeline of ${STATE.pipelineSteps.length} steps complete`, 'success');
+  }
+}
+
+function onPipelineStage(data) {
+  const pct = data.progress || 0;
+  setPipelineProgress(pct);
+  setPipelineStatus(`Stage ${data.stage + 1}/${data.total_stages}`);
+  // Update current preview
+  const el = document.getElementById('img-after');
+  el.src = data.result; el.style.display = 'block';
+  updateStats(data.stats);
+  // Highlight step
+  if (STATE.pipelineSteps[data.stage]) {
+    STATE.pipelineSteps.slice(0, data.stage).forEach(s => {
+      document.getElementById(`step-${s.id}`)?.classList.add('done');
+      document.getElementById(`step-${s.id}`)?.classList.remove('active-step');
+    });
+    document.getElementById(`step-${STATE.pipelineSteps[data.stage].id}`)?.classList.add('active-step');
+  }
+}
+
+function onPipelineComplete(data) {
+  STATE.processedURL = data.result;
+  document.getElementById('img-after').src = data.result;
+  document.getElementById('img-after').style.display = 'block';
+  setPipelineProgress(1);
+  setPipelineStatus('Complete ✓');
+  STATE.pipelineSteps.forEach(s => {
+    const el = document.getElementById(`step-${s.id}`);
+    el?.classList.remove('active-step'); el?.classList.add('done');
+  });
+  notify('Pipeline complete', 'success');
+}
+
+function stopPipeline() {
+  if (STATE.socket) STATE.socket.emit('stop_pipeline', {});
+  setPipelineStatus('Stopped');
+  setPipelineProgress(0);
+}
+
+function setPipelineProgress(pct) {
+  document.getElementById('pipeline-bar').style.width = (pct * 100) + '%';
+}
+function setPipelineStatus(txt) {
+  document.getElementById('pipeline-status').textContent = txt;
+}
+
+// ════════════════════════════════════════════════════════════════
+// BENCHMARK
+// ════════════════════════════════════════════════════════════════
+async function runBenchmark() {
+  if (!STATE.originalURL) { notify('Load an image first', 'warn'); return; }
+  const btn = document.getElementById('bench-btn');
+  btn.disabled = true; btn.textContent = '⌬ Running...';
+  notify('Benchmarking — this takes a few seconds...', 'info');
+  try {
+    const algs = ['gaussian_blur','bilateral_filter','median_filter','sobel_edges',
+                  'histogram_equalization','tone_map_aces','dilate','erode','unsharp_mask'];
+    const r = await fetch(`${API}/benchmark`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image: STATE.originalURL, algorithms: algs})
+    });
+    const d = await r.json();
+    renderBenchmark(d.benchmark);
+    notify('Benchmark complete', 'success');
+  } catch(e) { notify('Benchmark failed: ' + e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '⌬ Run Benchmark'; }
+}
+
+function renderBenchmark(results) {
+  const el   = document.getElementById('bench-bars');
+  const vals  = Object.values(results).map(r => r.mean_ms);
+  const maxMs = Math.max(...vals);
+  const colors = ['var(--acc)','var(--acc2)','var(--acc3)','var(--acc4)','var(--warn)',
+                  'var(--acc)','var(--acc3)','var(--acc2)','var(--acc4)'];
+  el.innerHTML = Object.entries(results).map(([alg, r], i) => `
+    <div class="bench-row">
+      <span class="bench-name">${alg.replace(/_/g,' ')}</span>
+      <div class="bench-track">
+        <div class="bench-fill" style="width:${(r.mean_ms/maxMs*100).toFixed(1)}%;background:${colors[i % colors.length]}"></div>
+      </div>
+      <span class="bench-ms">${r.mean_ms.toFixed(1)}ms</span>
+    </div>
+  `).join('');
+}
+
+function clearBenchmark() {
+  document.getElementById('bench-bars').innerHTML = '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// SECTION TOGGLE
+// ════════════════════════════════════════════════════════════════
+function toggleSection(hdr) {
+  hdr.classList.toggle('open');
+  const body = hdr.nextElementSibling;
+  body.classList.toggle('collapsed');
+}
+
+// ════════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ════════════════════════════════════════════════════════════════
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  // Show/hide right-panel sections
+  document.getElementById('tab-pipeline-panel').style.display = tab === 'pipeline' ? '' : 'none';
+  document.getElementById('tab-bench-panel').style.display    = tab === 'benchmark' ? '' : 'none';
+  document.getElementById('tab-neural-panel').style.display   = tab === 'neural' ? '' : 'none';
+  // Show/hide left panel alg section
+  document.getElementById('alg-section').style.display = tab === 'neural' ? 'none' : '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ════════════════════════════════════════════════════════════════
+function notify(msg, type = 'info') {
+  const stack = document.getElementById('notif-stack');
+  const el    = document.createElement('div');
+  el.className = `notif ${type}`;
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(20px)'; el.style.transition = '.3s'; }, 2700);
+  setTimeout(() => el.remove(), 3000);
+}
+
+// ════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'Enter') { e.preventDefault(); applyAlgorithm(); }
+    if (e.key === 'z')     { e.preventDefault(); resetToOriginal(); }
+    if (e.key === 's')     { e.preventDefault(); downloadResult(); }
+  }
+  if (!e.ctrlKey && !e.metaKey) {
+    if (e.key === '1') setView('split',   document.querySelector('.view-tab'));
+    if (e.key === '2') setView('before',  document.querySelectorAll('.view-tab')[1]);
+    if (e.key === '3') setView('after',   document.querySelectorAll('.view-tab')[2]);
+    if (e.key === '4') setView('diff',    document.querySelectorAll('.view-tab')[3]);
+    if (e.key === '+' || e.key === '=') adjustZoom(.25);
+    if (e.key === '-')  adjustZoom(-.25);
+    if (e.key === '0')  resetZoom();
+  }
+});
+</script>
+</body>
+</html>

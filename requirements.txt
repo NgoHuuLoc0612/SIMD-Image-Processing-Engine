@@ -1,0 +1,17 @@
+# SIMD Image Processing Engine — Python dependencies
+# Windows-compatible (tested on CPython 3.10/3.11/3.12 x64)
+
+flask
+flask-cors
+flask-socketio
+
+# Async transport — use gevent on Windows (eventlet has issues with Python 3.12+)
+# If you prefer eventlet: pip install eventlet
+# and set ASYNC_MODE=eventlet in server.py
+gevent
+gevent-websocket
+
+# Core image processing
+numpy
+Pillow
+scipy
